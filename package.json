@@ -1,0 +1,38 @@
+{
+  "private": true,
+  "name": "blog",
+  "description": "Personal blog built with Gatsby and @lekoarts/gatsby-theme-minimal-blog",
+  "version": "1.0.0",
+  "author": "stevejkang <iam@juneyoung.io>",
+  "license": "MIT",
+  "scripts": {
+    "build": "gatsby build",
+    "develop": "gatsby develop",
+    "start": "gatsby develop",
+    "serve": "gatsby serve",
+    "clean": "gatsby clean"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@giscus/react": "^3.1.0",
+    "@lekoarts/gatsby-theme-minimal-blog": "^6.2.6",
+    "@theme-ui/color": "^0.17.4",
+    "@theme-ui/presets": "^0.17.4",
+    "ajv": "^8.18.0",
+    "dotenv": "^17.4.1",
+    "gatsby": "^5.16.1",
+    "gatsby-plugin-feed": "^5.16.0",
+    "gatsby-plugin-google-gtag": "^5.16.0",
+    "gatsby-plugin-manifest": "^5.16.0",
+    "gatsby-plugin-sitemap": "^6.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "typescript": "^6.0.2"
+  }
+}

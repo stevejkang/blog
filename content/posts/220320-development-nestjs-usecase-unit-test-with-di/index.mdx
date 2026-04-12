@@ -1,0 +1,165 @@
+---
+title: "Nest.js ConfigService를 주입받는 UseCase 테스트하기"
+description: "(너무 당연한 얘기지만) 환경변수에 영향받지 않는 테스트 만들기"
+date: 2022-03-20
+slug: "/development-nestjs-usecase-unit-test-with-di-220320"
+tags:
+  - development
+  - nestjs
+  - test
+  - backend
+  - jest
+  - typescript
+banner: ./article-banner.png
+---
+
+Nest.js에서 환경변수를 관리하기 위해서 `@nestjs/config` 를 주로 사용하는데 `configModule.forRoot()`에서 global로 환경변수를 사용할 수 있도록 만들어도 실제 유닛 테스트시에 `process.env`로 가져오는 방법은 최대한 지양해야 한다. `process.env` 값을 바꾸는 것과, 테스트에 값이 주입되는 것은 독립적이어야 한다. 상황에 따라 환경변수가 제대로 세팅되지 않은 경우(strict mode를 지원하는 `convict`의 경우에는 서비스 실행시부터 오류를 발생시켜 예외긴 하지만.) 혹은 가변적인 환경변수에 대한 테스트가 필요할 수도 있다.
+
+Nest.js의 특징 중 하나로, 특정 서비스나 UseCase를 주입할 수 있는데, `ConfigService`도 동일하게 UseCase에 주입하여 사용하고 있다. 아래와 같이 환경변수 `ENV_FOO`가 0보다 클 때 성공을 반환하는 UseCase `FooBarUseCase`가 있다고 가정하자. 구현하면 아래와 같은 모습일거다.
+
+> `interface UseCase<IRequest, IResponse>`는 `execute(request?: IRequest): Promise<IResponse> | IResponse;`를 가지는 인터페이스이다.
+
+```ts
+interface IFooBarUseCaseResponse {
+	ok: true;
+}
+
+export class FooBarUseCase implements UseCase<void, IFooBarUseCaseResponse> {
+  constructor(
+    private readonly configService: ConfigService,
+  ) {}
+
+  execute(): IFooBarUseCaseResponse {
+    const foo = this.configService.get<number>('ENV_FOO');
+    return {
+      ok: foo > 0;
+    }
+  }
+}
+```
+
+그리고 일반적으로 테스트를 작성한다면 아래와 같을 것이다.
+
+```ts
+import { Test, TestingModule } from '@nestjs/testing';
+import { FooBarUseCase } from './FooBarUseCase';
+
+describe('FooBarUseCase', () => {
+  let fooBarUseCase: FooBarUseCase;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        FooBarUseCase,
+      ],
+    }).compile();
+
+    fooBarUseCase = module.get<FooBarUseCase>(FooBarUseCase);
+  });
+
+  it('should be defined', () => {
+    expect(fooBarUseCase).toBeDefined();
+  });
+
+  it('should success', () => {
+    expect(fooBarUseCase.execute().ok).toBe(true);
+    expect(fooBarUseCase.execute().code).toBe('SUCCESS');
+  });
+});
+```
+
+하지만 위 테스트코드는 심각한 문제를 가지고 있다.
+
+> 물론 실제에서 `FooBarUseCase`와 같은 유즈케이스는 나올 가능성이 없다. 사실 저런 유즈케이스는 그 자체로 문제가 크다.
+
+일단 환경변수에 의존적인 UseCase라서 발생하는 문제가 있다. 우리는 환경변수 `ENV_FOO`가 0보다 큰 숫자로 정의되어있을 것이라는 사실만 믿고 테스트를 성공한다고 기대했다. 심지어 메소드의 매개변수로 들어오는 값이 아닌 외부적 요인으로 테스트는 언제든지 실패할 수 있다. **더군다나, 사실 위 테스트코드는 제대로 작동할 수 없다.**
+
+`FooBarUseCase`를 돌다가 `execute()` 메소드의
+
+```ts
+const foo = this.configService.get<number>('ENV_FOO');
+```
+
+를 만나면
+
+```
+TypeError: Cannot read property 'get' of undefined
+```
+
+오류가 나면서 테스트가 실패한다.
+
+`FooBarUseCase`를 테스트하기 위해서는 테스트 당시에 해당 클래스를 생성하면서 `ConfigService`를 주입해주어야 한다. 이때 진짜 `ConfigService`가 아닌 마치 `ConfigService`인 것 처럼 작동하도록 해야한다.
+
+> 우리는 그것을 Mock이라고 부른다고 알고 있다.
+
+ConfigServiceMock을 만들어서 다시 테스트코드를 짜면 아래와 같다.
+
+```ts
+import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
+import { FooBarUseCase } from './FooBarUseCase';
+
+const CONFIG_ENV_FOO = 3;
+
+describe('FooBarUseCase', () => {
+  let fooBarUseCase: FooBarUseCase;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        FooBarUseCase,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'ENV_FOO') {
+                return CONFIG_ENV_FOO;
+              }
+
+              return null;
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    fooBarUseCase = module.get<FooBarUseCase>(FooBarUseCase);
+  });
+
+  it('should be defined', () => {
+    expect(fooBarUseCase).toBeDefined();
+  });
+
+  it('should success', () => {
+    expect(fooBarUseCase.execute().ok).toBe(true);
+    expect(fooBarUseCase.execute().code).toBe('SUCCESS');
+  });
+});
+```
+
+만약, `ENV_FOO`가 음수이거나 0일때를 가정해서 실패하는 테스트 케이스를 만드려면 아래와 같이 Mock을 여러개 만들어두고, 상황에 맞춰 사용하면 된다.
+
+```ts
+const CONFIG_ENV_FOO_POSITIVE = 2;
+const CONFIG_ENV_FOO_NEGATIVE = -1;
+
+const PositiveMock = {
+  get: jest.fn((key: string) => {
+    if (key === 'ENV_FOO') {
+      return CONFIG_ENV_FOO_POSITIVE;
+    }
+
+    return null;
+  }),
+};
+
+const NegativeMock = {
+  get: jest.fn((key: string) => {
+    if (key === 'ENV_FOO') {
+      return CONFIG_ENV_FOO_NEGATIVE;
+    }
+
+    return null;
+  }),
+};
+```

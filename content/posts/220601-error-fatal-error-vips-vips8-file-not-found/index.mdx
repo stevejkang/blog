@@ -1,0 +1,52 @@
+---
+title: "M1 Mac에서 fatal error: 'vips/vips8' file not found 해결하기"
+description: "npm sharp를 의존하고 있는 패키지를 install 할 때 발생하는 오류"
+date: 2022-06-01
+slug: "/error-fatal-error-vips-vips8-file-not-found-220601"
+tags:
+  - error
+  - development
+  - nodejs
+  - npm
+banner: ./article-banner.png
+---
+
+이전 Intel Mac에서 npm install 되고, node_modules가 있는 상태에서 npm start develop와 같은 run command 입력시 아래와 같은 오류가 뜨면서 npm install 할 것을 권장.
+
+```
+Error: 'darwin-x64' binaries cannot be used on the 'darwin-arm64v8' platform. Please remove the 'node_modules/sharp' directory and run 'npm install' on the 'darwin-arm64v8' platform.
+```
+
+이후에 npm ci 로 클린 설치를 시도했지만 다시 아래와 같은 오류가 발생.
+
+``` {1}
+npm ERR! ../src/common.cc:24:10: fatal error: 'vips/vips8' file not found
+npm ERR! #include <vips/vips8>
+npm ERR!          ^~~~~~~~~~~~
+npm ERR! 1 error generated.
+npm ERR! make: *** [Release/obj.target/sharp/src/common.o] Error 1
+npm ERR! gyp ERR! build error 
+npm ERR! gyp ERR! stack Error: `make` failed with exit code: 2
+npm ERR! gyp ERR! stack     at ChildProcess.onExit (/Users/steve/.nvm/versions/node/v16.15.0/lib/node_modules/npm/node_modules/node-gyp/lib/build.js:194:23)
+npm ERR! gyp ERR! stack     at ChildProcess.emit (node:events:527:28)
+npm ERR! gyp ERR! stack     at Process.ChildProcess._handle.onexit (node:internal/child_process:291:12)
+npm ERR! gyp ERR! System Darwin 21.5.0
+npm ERR! gyp ERR! command "/Users/steve/.nvm/versions/node/v16.15.0/bin/node" "/Users/steve/.nvm/versions/node/v16.15.0/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js" "rebuild"
+npm ERR! gyp ERR! cwd /Volumes/STEVEJKANG/Development/stevejkang/juneyoung-io/node_modules/gatsby-plugin-manifest/node_modules/sharp
+npm ERR! gyp ERR! node -v v16.15.0
+npm ERR! gyp ERR! node-gyp -v v9.0.0
+npm ERR! gyp ERR! not ok
+```
+
+위 오류는 현재 사용 중인 gatsby-plugin-manifest 이 sharp를 의존성으로 가지기 때문에 발생하는 문제이고, [lovell/sharp#2460(issue)](https://github.com/lovell/sharp/issues/2460)를 확인하면 아래와 같은 해결책을 알려주고 있다.
+
+```bash
+brew install pkg-config glib zlib
+brew install libjpeg-turbo libpng webp
+
+# download libvips package from https://github.com/libvips/libvips/releases/latest
+# then, in the libvips source folder
+PKG_CONFIG_PATH=/opt/homebrew/Cellar/zlib/1.2.11/lib/pkgconfig ./configure
+make
+sudo make install
+```

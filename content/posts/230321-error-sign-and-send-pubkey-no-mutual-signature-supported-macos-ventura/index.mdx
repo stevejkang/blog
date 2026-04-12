@@ -1,0 +1,31 @@
+---
+title: "SSH connection error sign_and_send_pubkey: no mutual signature supported on macOS Ventura"
+description: "macOS Ventura에서 SSH IdentityFile 사용 접속시 발생하는 오류"
+date: 2023-03-21
+slug: "/error-sign-and-send-pubkey-no-mutual-signature-supported-macos-ventura-230321"
+tags:
+  - error
+  - macos
+---
+
+macOS Ventura로 업데이트하고 난 뒤, 기존에 사용 중이던 SSH Configuration이 아래와 같은 오류를 뱉어냈다.
+
+```bash
+> ssh something-host
+sign_and_send_pubkey: no mutual signature supported
+```
+
+아래와 같이 SSH Host 설정에 구문 하나를 추가해주면 된다.
+```
+PubkeyAcceptedKeyTypes +ssh-rsa
+```
+
+대략 이런 모습이다.
+```
+Host something-host
+  HostName localhost
+  User ubuntu
+  Port 22
+  PubkeyAcceptedKeyTypes +ssh-rsa
+  IdentityFile ~/.pem/some-key.pem
+```

@@ -1,0 +1,98 @@
+---
+title: "Gatsby Blog 인스턴스 자동배포 삽질 기록"
+description: "정적 사이트를 왜 인스턴스에 배포한다고 해가지고 이 고생을..."
+date: 2022-04-27
+slug: "/devops-deploy-gatsby-digital-ocean-droplet-with-actions-220427"
+tags:
+  - devops
+  - digitalocean
+  - github-actions
+banner: ./article-banner.png
+---
+
+## 들어가기 전에
+
+보통의 경우 gatsby blog를 비롯한 정적 사이트는 github pages 혹은 netlify로 배포하는 게 일반적이다. (그게 가장 편하고 비용도 적게 든다)
+
+하지만, 나의 경우 개인적으로 쓰던 DigitalOcean 인스턴스가 한 대 있었고, 마침 거기에 간단한 사이트들을 배포하고 있었어서 블로그를 서버 인스턴스로 띄우기로 했었다. 그리고 약 1년 동안 FTP 클라이언트를 이용해 SFTP 방식으로 블로그를 배포하고 있었다.
+
+이 글은 SFTP 수동 배포 방식에 환멸을 느낀 내가 해당 서버에 자동으로 배포해주는 CD를 달아야겠다고 생각하고 한 삽질을 기록한 것이다.
+
+## 배포 방식?
+
+보통 원격지와의 파일 동기화의 경우 rsync를 이용하곤 한다. 바로 찾아본 것은 rsync를 지원하는 actions 였고, 아래 actions을 사용하기로 했다.
+
+[https://github.com/Burnett01/rsync-deployments](https://github.com/Burnett01/rsync-deployments)
+
+여기서 하나 문제가 생겼는데 해당 actions는 ssh private key 파일을 이용한 접속만 지원했고, 내가 가지고 있던 droplets 인스턴스 접속방법은 password-based authentication 방식이라 내가 가지고 있는 ssh key pair를 인스턴스에 등록해줘야 했다.
+
+> 만약 가지고 있는 ssh key pair가 없다면 아래 아티클을 참고해서 생성하면 된다.  
+> [https://docs.digitalocean.com/products/droplets/how-to/add-ssh-keys/create-with-openssh/](https://docs.digitalocean.com/products/droplets/how-to/add-ssh-keys/create-with-openssh/)
+
+## SSH Key Pair 등록하기
+
+1. **먼저 Local machine에 등록된 ssh key를 확인한다.**
+
+    ```bash {3,4}
+    ❯ ll
+    .rw-r--r-- juneyoung staff 4.1 KB Sat Apr  9 13:13:33 2022 config
+    .rw------- juneyoung staff 464 B  Sun Feb 20 14:09:08 2022 id_ed25519
+    .rw-r--r-- juneyoung staff  98 B  Sun Feb 20 14:09:08 2022 id_ed25519.pub
+    .rw------- juneyoung staff 7.4 KB Mon Apr 18 11:55:04 2022 known_hosts
+    .rw------- juneyoung staff 6.7 KB Thu Apr  7 19:01:01 2022 known_hosts.old
+    ```
+
+    나의 경우 `id_ed25519`가 private key, `id_ed25519.pub`가 public key이다. 사용된 알고리즘에 따라 `id_rsa`, `id_rsa.pub`이 될 수도 있다.
+
+2. **Local machine의 ssh key pair를 Remote machine에 등록한다.**
+
+    이때는 여러가지 방법이 있는데 원리는 모두 같다. 아래와 같은 순서로 이뤄진다.
+
+  > 1. Remote machine의 접속 권한 획득 (password-based authentication)
+  > 2. Remote machine의 `~/.ssh/authorized_keys` 파일 최하단에 Local machine의 public key 등록
+
+  > 이 이후부터는 해당 ssh key pair를 이용하여 password prompt 없이 접속이 가능해진다. (해당 ssh key pair가 passphrase를 가지고 있다면 인증이 필요하다.)
+
+  - **`ssh-copy-id` 커맨드를 이용한 방법**
+
+    ```bash
+    ❯ ssh-copy-id username@ip_address
+    ```
+- **커맨드 파이핑으로 처리하는 방법**
+
+    ```bash
+    ❯ cat ~/.ssh/id_rsa.pub | \
+    ssh username@ip_address "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+    ```
+
+## workflow.yml 추가하기
+빌드와 배포를 한번에 돌릴 생각이라 아래와 같은 워크플로우를 작성하였다.
+
+```yml:title=.github/workflows/build-deploy.yml
+name: "Build & Deploy"
+on:
+  push:
+    branches:
+    - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+    - run: npm install
+    - run: npm run build
+    - name: rsync deployments
+      uses: burnett01/rsync-deployments@5.2
+      with:
+        switches: -avzr --delete # -a: archive, -v: verbose, -z: compress, -r: recursive, --delete: delete files that are not in the source directory
+        path: public/ # npm run build 이후 배포 대상 파일들이 위치해있는 경로
+        remote_path: ${{ secrets.DEPLOY_PATH }} # 배포 서버의 원격지 경로
+        remote_host: ${{ secrets.DEPLOY_HOST }} # 배포 서버의 호스트
+        remote_user: ${{ secrets.DEPLOY_USER }} # 배포 서버의 유저
+        remote_key: ${{ secrets.DEPLOY_KEY }} # private key 전문
+        remote_key_pass: ${{ secrets.DEPLOY_KEY_PASS }} # (optional) private key가 passphrase를 가지고 있다면 사용
+```
